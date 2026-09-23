@@ -1,12 +1,1119 @@
 <!DOCTYPE html>
-<html lang="uk">
+<html>
+
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AppRTC</title>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>WebRTC SFU Chat</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com"/>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+          rel="stylesheet"/>
+    <style>
+        :root {
+            --bg-gradient: radial-gradient(circle at 50% 50%, #1a1a2e 0%, #0d0d15 100%);
+            --card-bg: rgba(22, 22, 37, 0.7);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --text-primary: #f3f4f6;
+            --text-secondary: #9ca3af;
+            --accent-blue: #3b82f6;
+            --accent-blue-glow: rgba(59, 130, 246, 0.5);
+            --accent-green: #10b981;
+            --accent-green-glow: rgba(16, 185, 129, 0.5);
+            --accent-orange: #f59e0b;
+            --accent-orange-glow: rgba(245, 158, 11, 0.5);
+            --accent-red: #ef4444;
+            --accent-red-glow: rgba(239, 68, 68, 0.5);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: var(--bg-gradient);
+            color: var(--text-primary);
+            min-height: 100vh;
+            padding: 2rem;
+            overflow-x: hidden;
+        }
+
+        /* Blurred background glow decorations (from the ice-tcp example). */
+        .bg-glow,
+        .bg-glow-right {
+            position: fixed;
+            z-index: -1;
+            pointer-events: none;
+            filter: blur(80px);
+        }
+
+        .bg-glow {
+            width: 600px;
+            height: 600px;
+            top: -100px;
+            left: -100px;
+            background: radial-gradient(circle, rgba(139, 92, 246, 0.15) 0%, rgba(59, 130, 246, 0.05) 50%, transparent 100%);
+        }
+
+        .bg-glow-right {
+            width: 500px;
+            height: 500px;
+            bottom: -100px;
+            right: -100px;
+            background: radial-gradient(circle, rgba(16, 185, 129, 0.1) 0%, rgba(59, 130, 246, 0.05) 60%, transparent 100%);
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1100px;
+            margin: 0 auto;
+            position: relative;
+            z-index: 1;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        h1 {
+            font-size: 2.75rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #fff 0%, #a5b4fc 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.03em;
+            margin-bottom: 0.5rem;
+        }
+
+        .subtitle {
+            color: var(--text-secondary);
+            font-size: 1.05rem;
+            font-weight: 300;
+        }
+
+        /* Glassy card — the shared surface used by the controls panel and every peer box. */
+        .card {
+            background: var(--card-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--border-color);
+            border-radius: 1.25rem;
+            padding: 1.25rem;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+            transition: transform 0.3s ease, border-color 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-4px);
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            padding-bottom: 0.75rem;
+        }
+
+        .card-title {
+            font-size: 1.15rem;
+            font-weight: 600;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .card-icon {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: var(--accent-green);
+            box-shadow: 0 0 10px var(--accent-green-glow);
+            flex-shrink: 0;
+        }
+
+        /* Connection-state colors for the Room card's status dot: yellow while waiting /
+           connecting, green once joined, red on failure / disconnect. */
+        .card-icon.waiting,
+        .card-icon.checking {
+            background-color: var(--accent-orange);
+            box-shadow: 0 0 10px var(--accent-orange-glow);
+        }
+
+        .card-icon.connected {
+            background-color: var(--accent-green);
+            box-shadow: 0 0 10px var(--accent-green-glow);
+        }
+
+        .card-icon.failed {
+            background-color: var(--accent-red);
+            box-shadow: 0 0 10px var(--accent-red-glow);
+        }
+
+        .status-pill {
+            font-size: 0.75rem;
+            padding: 0.15rem 0.6rem;
+            border-radius: 9999px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            text-transform: uppercase;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+            color: var(--text-secondary);
+        }
+
+        /* Matches the ice-tcp example's state colors. */
+        .status-pill.waiting,
+        .status-pill.checking {
+            color: #fde68a;
+            background: rgba(245, 158, 11, 0.15);
+            border-color: rgba(245, 158, 11, 0.3);
+        }
+
+        .status-pill.connected {
+            color: #a7f3d0;
+            background: rgba(16, 185, 129, 0.15);
+            border-color: rgba(16, 185, 129, 0.3);
+        }
+
+        .status-pill.failed {
+            color: #fca5a5;
+            background: rgba(239, 68, 68, 0.15);
+            border-color: rgba(239, 68, 68, 0.3);
+        }
+
+        /* Controls panel */
+        .controls-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .controls-row label {
+            color: var(--text-primary);
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+
+        input[type="number"] {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+            color: var(--text-primary);
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-color);
+            border-radius: 0.6rem;
+            padding: 0.5rem 0.75rem;
+            width: 170px;
+        }
+
+        input[type="number"]:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+        }
+
+        input[type="number"].invalid {
+            border-color: var(--accent-red);
+        }
+
+        button {
+            font-family: inherit;
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: #fff;
+            background: var(--accent-blue);
+            border: none;
+            border-radius: 0.6rem;
+            padding: 0.5rem 1.1rem;
+            cursor: pointer;
+            transition: background 0.2s ease, transform 0.1s ease, opacity 0.2s ease;
+        }
+
+        button:hover:not(:disabled) {
+            background: #2563eb;
+        }
+
+        button:active:not(:disabled) {
+            transform: translateY(1px);
+        }
+
+        button:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        /* Cam / Mic toggle switches — the DesignBombs "simple toggle switch", re-themed dark. */
+        .toggle-field {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .toggle-name {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        .switch, .switch * {
+            box-sizing: content-box;
+        }
+        .switch {
+            position: relative;
+            display: inline-block;
+            vertical-align: middle;
+            width: 56px;
+            height: 20px;
+            padding: 3px;
+            border-radius: 18px;
+            cursor: pointer;
+            background: rgba(255, 255, 255, 0.06);
+            box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.3);
+        }
+        .switch:has(.switch-input:disabled) {
+            cursor: not-allowed;
+        }
+        .switch-input {
+            position: absolute;
+            top: 0;
+            left: 0;
+            opacity: 0;
+            margin: 0;
+        }
+        .switch-label {
+            position: relative;
+            display: block;
+            height: inherit;
+            font-size: 9px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            border-radius: inherit;
+            background: var(--accent-red);
+            box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+            transition: 0.15s ease-out;
+            transition-property: opacity, background;
+        }
+        .switch-label:before, .switch-label:after {
+            position: absolute;
+            top: 50%;
+            margin-top: -0.5em;
+            line-height: 1;
+            transition: inherit;
+        }
+        .switch-label:before {
+            content: attr(data-off);
+            right: 9px;
+            color: #fff;
+        }
+        .switch-label:after {
+            content: attr(data-on);
+            left: 9px;
+            color: #fff;
+            opacity: 0;
+        }
+        .switch-input:checked ~ .switch-label {
+            background: var(--accent-green);
+            box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.25);
+        }
+        .switch-input:checked ~ .switch-label:before {
+            opacity: 0;
+        }
+        .switch-input:checked ~ .switch-label:after {
+            opacity: 1;
+        }
+        .switch-handle {
+            position: absolute;
+            top: 4px;
+            left: 4px;
+            width: 18px;
+            height: 18px;
+            border-radius: 10px;
+            background: #fff;
+            box-shadow: 1px 1px 4px rgba(0, 0, 0, 0.4);
+            transition: left 0.15s ease-out;
+        }
+        .switch-input:checked ~ .switch-handle {
+            left: 40px;
+        }
+        .switch-input:disabled ~ .switch-label {
+            background: rgba(255, 255, 255, 0.12);
+            opacity: 0.45;
+        }
+        .switch-input:disabled ~ .switch-handle {
+            opacity: 0.6;
+        }
+
+        .chan-status {
+            margin-top: 0.85rem;
+            color: var(--text-secondary);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+        }
+
+        /* Peer boxes laid out as a responsive grid of cards. */
+        #media {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 1.5rem;
+            margin-top: 1.5rem;
+        }
+
+        .peer {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .peer .card-header {
+            margin-bottom: 1rem;
+        }
+
+        /* Video sits on top and always reserves its 16:9 space — even before, or without, a
+           video track — so the audio row below and the neighbouring peers never shift. */
+        .peer-video {
+            width: 100%;
+            aspect-ratio: 16 / 9;
+            background: #0d0d15;
+            border-radius: 0.75rem;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .peer-video video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        /* Audio likewise reserves its row height so the neighbouring peers stay put whether or
+           not a peer has an audio track. */
+        .peer-audio {
+            width: 100%;
+            height: 44px;
+            margin-top: 0.75rem;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 0.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .peer-audio audio {
+            width: 100%;
+            height: 32px;
+        }
+
+        .peer-video .placeholder,
+        .peer-audio .placeholder {
+            color: var(--text-secondary);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+        }
+
+        footer {
+            margin-top: 3rem;
+            text-align: center;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+    </style>
 </head>
+
 <body>
-  <h1>Сайт працює</h1>
-  <p>GitHub Pages налаштовано правильно.</p>
+<div class="bg-glow"></div>
+<div class="bg-glow-right"></div>
+
+<div class="container">
+    <header>
+        <h1>WebRTC SFU Chat</h1>
+        <p class="subtitle">Selective Forwarding Unit &bull; multi-party audio / video</p>
+    </header>
+
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">
+                <span class="card-icon waiting" id="conn_icon"></span>
+                <div id="chan_status">Click Join Button...</div>
+            </div>
+            <span class="status-pill waiting" id="ice_status">Waiting</span>
+        </div>
+        <div class="controls-row">
+            <label for="room">Room</label>
+            <input type="number" id="room" min="0" max="18446744073709551615"/>
+            <button id="join" onClick="startRtc()">Join</button>
+            <button id="leave" onClick="leaveRtc()" disabled>Leave</button>
+            <span class="toggle-field">
+                <span class="toggle-name">Cam</span>
+                <label class="switch">
+                    <input type="checkbox" id="cam" class="switch-input" disabled>
+                    <span class="switch-label" data-on="On" data-off="Off"></span>
+                    <span class="switch-handle"></span>
+                </label>
+            </span>
+            <span class="toggle-field">
+                <span class="toggle-name">Mic</span>
+                <label class="switch">
+                    <input type="checkbox" id="mic" class="switch-input" disabled>
+                    <span class="switch-label" data-on="On" data-off="Off"></span>
+                    <span class="switch-handle"></span>
+                </label>
+            </span>
+        </div>
+    </div>
+
+    <div id="media"></div>
+
+    <footer>
+        <p>Built with WebRTC-rs &bull; SFU chat demo</p>
+    </footer>
+</div>
+<script>
+    const byId = (id) => document.getElementById(id);
+    const byTag = (tag) => [].slice.call(document.getElementsByTagName(tag));
+
+    // The UI keeps its uint64 room id — short enough to read off one tab and type into
+    // another — but the SFU keys rooms by UUID, so widen it on the way out. This is
+    // exactly Rust's `Uuid::from_u128(room)`: the number becomes the low bits of an
+    // otherwise-zero UUID, so room 42 is always 00000000-0000-0000-0000-00000000002a and
+    // two browsers that typed the same number land in the same room.
+    function roomIdToUuid(value) {
+        const hex = BigInt(value).toString(16).padStart(32, "0");
+        return hex.slice(0, 8) + "-" + hex.slice(8, 12) + "-" + hex.slice(12, 16) +
+            "-" + hex.slice(16, 20) + "-" + hex.slice(20);
+    }
+
+    byId("room").value = Math.floor(Math.random() * 1000000000);
+
+    const roomInput = byId("room");
+    const joinBtn = byId("join");
+    const chanStatus = byId("chan_status");
+
+    function validateRoomInput() {
+        const roomVal = roomInput.value;
+        const re = /^\d+$/;
+        let valid = re.test(roomVal);
+        if (valid) {
+            try {
+                const val = BigInt(roomVal);
+                valid = val >= 0n && val <= 18446744073709551615n;
+            } catch (e) {
+                valid = false;
+            }
+        }
+        if (valid) {
+            joinBtn.disabled = false;
+            roomInput.classList.remove('invalid');
+            if (chanStatus.innerText === "Room id must be a valid uint64 number!") {
+                chanStatus.innerText = "Click Join Button...";
+                chanStatus.style.color = "";
+            }
+        } else {
+            joinBtn.disabled = true;
+            roomInput.classList.add('invalid');
+            chanStatus.innerText = "Room id must be a valid uint64 number!";
+            chanStatus.style.color = "var(--accent-red)";
+        }
+    }
+
+    roomInput.addEventListener('input', validateRoomInput);
+    // Initial validation
+    validateRoomInput();
+
+    let clientId = Math.floor(Math.random() * 1000000000);
+    const unsubscribed = new Set();
+    let streamCam;
+    let streamMic;
+    let dataChannel;
+    let ws;
+    let rtc;
+
+    // Toggle the camera/mic tracks live on switch change. If the media stream doesn't exist
+    // yet (e.g. initial request failed/denied), toggle-ON will try to capture it.
+    byId('cam').addEventListener('change', async () => {
+        if (!streamCam) {
+            if (byId('cam').checked) {
+                await startCam();
+            } else {
+                byId('cam').checked = false;
+            }
+        } else {
+            const track = streamCam.getVideoTracks()[0];
+            if (track) {
+                track.enabled = byId('cam').checked;
+            }
+        }
+    });
+
+    byId('mic').addEventListener('change', async () => {
+        if (!streamMic) {
+            if (byId('mic').checked) {
+                await startMic();
+            } else {
+                byId('mic').checked = false;
+            }
+        } else {
+            const track = streamMic.getAudioTracks()[0];
+            if (track) {
+                track.enabled = byId('mic').checked;
+            }
+        }
+    });
+
+    // Create a fresh RTCPeerConnection and attach its handlers. Called on each Join so a
+    // rejoin after Leave starts from a clean connection with live handlers — a new
+    // RTCPeerConnection created without re-attaching ontrack/oniceconnectionstatechange
+    // would silently never fire them (no remote video, stuck state).
+    function newRtc() {
+        rtc = new RTCPeerConnection();
+        rtc.oniceconnectionstatechange = onIceStateChange;
+        rtc.ontrack = onTrack;
+    }
+
+    // Single bi-directional signaling channel (borrowed from AppRTC/Collider): the browser
+    // registers {room, client} once, then exchanges SDP as {cmd, sdp} frames; the SFU
+    // pushes answers and server-initiated re-offers back on the same socket.
+    function sendSignal(obj) {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            const jsonStr = JSON.stringify(obj, (key, value) => {
+                if (typeof value === 'bigint') {
+                    return `__BIGINT__:${value.toString()}__`;
+                }
+                return value;
+            }).replace(/"__BIGINT__:(\d+)__"/g, '$1');
+            ws.send(jsonStr);
+        } else {
+            console.log('WS not open; dropping', obj.cmd);
+        }
+    }
+
+    // Reflect the connection state on the Room card: recolor the status dot (yellow while
+    // waiting/connecting, green once joined, red on failure/disconnect) and the status pill,
+    // mirroring the ice-tcp example.
+    function setConnState(kind, label) {
+        byId('conn_icon').className = `card-icon ${kind}`;
+        const pill = byId('ice_status');
+        pill.className = `status-pill ${kind}`;
+        pill.textContent = label;
+    }
+
+    function onIceStateChange() {
+        // Ignore late events (e.g. the 'closed' that resetSession's rtc.close() triggers).
+        if (!rtc) {
+            return;
+        }
+        const state = rtc.iceConnectionState;
+        if (state === 'connected' || state === 'completed') {
+            setConnState('connected', 'Connected');
+        } else if (state === 'checking' || state === 'new') {
+            setConnState('checking', 'Connecting');
+        } else if (state === 'failed' || state === 'disconnected') {
+            // The connection to the SFU dropped (e.g. the server closed). Tear the whole session
+            // down exactly like Leave — removing every peer box — but flag the disconnect in red.
+            const label = state === 'failed' ? 'Failed' : 'Disconnected';
+            resetSession('failed', label, 'Disconnected from server — click Join to reconnect');
+        } else {
+            setConnState('waiting', 'Waiting');
+        }
+    }
+
+    // Force VP8 only for video and OPUS only for audio using setCodecPreferences
+    async function setupCodecs() {
+        // Video: VP8 only
+        const videoCaps = RTCRtpSender.getCapabilities('video').codecs;
+        const vp8Only = videoCaps.filter(c => c.mimeType.toLowerCase() === 'video/vp8');
+
+        // Audio: OPUS only
+        const audioCaps = RTCRtpSender.getCapabilities('audio').codecs;
+        const opusOnly = audioCaps.filter(c => c.mimeType.toLowerCase() === 'audio/opus');
+
+        // Apply to all transceivers
+        rtc.getTransceivers().forEach(tcvr => {
+            if (tcvr.sender.track?.kind === 'video' && vp8Only.length > 0) {
+                tcvr.setCodecPreferences(vp8Only);
+            } else if (tcvr.sender.track?.kind === 'audio' && opusOnly.length > 0) {
+                tcvr.setCodecPreferences(opusOnly);
+            }
+        });
+    }
+
+    async function negotiate() {
+        await setupCodecs();           // Ensure codecs are set before creating offer
+        const offer = await rtc.createOffer();
+        console.log('do offer', offer.sdp.split('\r\n'));
+        rtc.setLocalDescription(offer);
+
+        // Send the offer over the WebSocket; the SFU's answer arrives asynchronously on the same
+        // socket (see onWsMessage). The SFU stamps each forwarded track's msid with the
+        // publisher's client id, so subscribers can recover it (see publisherClientId) — the
+        // browser doesn't need to embed anything.
+        sendSignal({cmd: 'offer', sdp: offer});
+    }
+
+    async function handleAnswer(answer) {
+        console.log('received answer', answer.sdp.split('\r\n'));
+        try {
+            await rtc.setRemoteDescription(answer);
+        } catch (error) {
+            console.log('rtc.setRemoteDescription(answer) with error: ', error);
+        }
+        pruneStaleMedia();
+    }
+
+    async function handleOffer(offer) {
+        console.log('handle offer', offer.sdp.split('\r\n'));
+        try {
+            await rtc.setRemoteDescription(offer);
+        } catch (error) {
+            console.log('rtc.setRemoteDescription(offer) with error: ', error);
+        }
+        // If we previously unsubscribed from any publisher, maintain inactive direction on their transceivers
+        rtc.getTransceivers().forEach((tcvr) => {
+            const pub = transceiverPublisher(tcvr);
+            if (pub && unsubscribed.has(pub)) {
+                tcvr.direction = 'inactive';
+            }
+        });
+        const answer = await rtc.createAnswer();
+        console.log('offer response', answer.sdp.split('\r\n'));
+        await rtc.setLocalDescription(answer);
+
+        // Echo the SFU's request_id so its outstanding local offer transaction can be completed
+        // when this re-answer comes back.
+        sendSignal({cmd: 'answer', sdp: answer, request_id: offer.request_id});
+
+        // The re-offer reflects the room's current publish state; now that the new directions
+        // are negotiated, drop the box/captions of any peer whose tracks are gone (e.g. it left).
+        pruneStaleMedia();
+    }
+
+    // Server->browser: the SFU pushes SDP JSON ({type, sdp, request_id?}). An 'answer'
+    // completes our offer; an 'offer' is a subscribe re-offer we must answer with the
+    // same request_id echoed back.
+    function onWsMessage(event) {
+        const sdp = JSON.parse(event.data);
+        if (sdp.type === 'answer') {
+            handleAnswer(sdp);
+        } else if (sdp.type === 'offer') {
+            handleOffer(sdp);
+        } else {
+            console.log('unexpected WS message', event.data);
+        }
+    }
+
+    // Capture the camera and add a sendonly video transceiver (no renegotiation — the caller
+    // decides when to offer). No-op if we already have it; on getUserMedia failure the Cam
+    // button is re-enabled so the user can retry.
+    async function addCam() {
+        if (streamCam) {
+            return;
+        }
+        try {
+            streamCam = await navigator.mediaDevices.getUserMedia({
+                video: { width: 640, height: 360 },
+            });
+        } catch (error) {
+            console.log('getUserMedia(video) failed', error);
+            byId('cam').checked = false;
+            return;
+        }
+        byId('cam').checked = true;  // the switch reflects that the camera is live
+        rtc.addTransceiver(streamCam.getTracks()[0], {
+            direction: "sendonly",
+            streams: [streamCam],
+            // Uncomment this to enable simulcast. The actual selected simulcast level is
+            // hardcoded in sync_chat.
+            // sendEncodings: [
+            //     { rid: "h", maxBitrate: 700 * 1024 },
+            //     { rid: "l", maxBitrate: 150 * 1024 }
+            // ]
+        });
+    }
+
+    // Capture the microphone and add a sendonly audio transceiver (see addCam).
+    async function addMic() {
+        if (streamMic) {
+            return;
+        }
+        try {
+            streamMic = await navigator.mediaDevices.getUserMedia({ audio: true });
+        } catch (error) {
+            console.log('getUserMedia(audio) failed', error);
+            byId('mic').checked = false;
+            return;
+        }
+        byId('mic').checked = true;  // the switch reflects that the mic is live
+        rtc.addTransceiver(streamMic.getTracks()[0], {
+            streams: [streamMic],
+            direction: "sendonly",
+        });
+    }
+
+    async function startCam() {
+        await addCam();
+        await negotiate();
+    }
+
+    async function startMic() {
+        await addMic();
+        await negotiate();
+    }
+
+    // Recover the publisher's clientId from a forwarded track. The SFU stamps each forwarded
+    // track's msid with `peer-<clientId>` (see track_with_codings_from_media_description in
+    // src/client.rs), so it surfaces here as the received stream id and/or track id; try both.
+    function publisherClientId(e) {
+        const ids = [];
+        if (e.streams && e.streams[0]) ids.push(e.streams[0].id);
+        if (e.track) ids.push(e.track.id);
+        for (const id of ids) {
+            const m = /peer-(\d+)/.exec(id || '');
+            if (m) return m[1];
+        }
+        return null;
+    }
+
+    // Recover the publisher's clientId from a transceiver's receiver track.
+    function transceiverPublisher(tcvr) {
+        const track = tcvr.receiver && tcvr.receiver.track;
+        if (track) {
+            if (track._publisher) {
+                return track._publisher;
+            }
+            const m = /peer-(\d+)/.exec(track.id || '');
+            if (m) return m[1];
+        }
+        return null;
+    }
+
+    // Placeholder shown in the reserved video slot when a peer has no (or a muted) video track.
+    function makePlaceholder(text) {
+        const span = document.createElement('span');
+        span.className = 'placeholder';
+        span.textContent = text;
+        return span;
+    }
+
+    // The peer's Sub switch: checked means "forward me this peer's media" (a=recvonly),
+    // unchecked sets the peer's transceivers to inactive (a=inactive).
+    function makeSubscribeToggle(publisher) {
+        const field = document.createElement('span');
+        field.className = 'toggle-field';
+        const name = document.createElement('span');
+        name.className = 'toggle-name';
+        name.textContent = 'Sub';
+        const box = document.createElement('label');
+        box.className = 'switch switch-sm';
+        box.title = `Subscribe to peer ${publisher}`;
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.className = 'switch-input';
+        input.checked = !unsubscribed.has(publisher);
+        const label = document.createElement('span');
+        label.className = 'switch-label';
+        label.dataset.on = 'On';
+        label.dataset.off = 'Off';
+        const handle = document.createElement('span');
+        handle.className = 'switch-handle';
+        box.append(input, label, handle);
+        field.append(name, box);
+
+        input.addEventListener('change', async () => {
+            const subscribed = input.checked;
+            setPeerSubscribed(publisher, subscribed);
+            let changed = false;
+            rtc.getTransceivers().forEach((tcvr) => {
+                if (transceiverPublisher(tcvr) === String(publisher)) {
+                    tcvr.direction = subscribed ? 'recvonly' : 'inactive';
+                    changed = true;
+                }
+            });
+            if (changed) {
+                await negotiate();
+            }
+        });
+        return field;
+    }
+
+    // Reflect a subscription change on the peer's card: an unsubscribed peer drops its media
+    // right away (the SFU's re-offer, which actually stops the flow, follows) and keeps the
+    // card with "Unsubscribed" placeholders so it can be re-checked.
+    function setPeerSubscribed(publisher, subscribed) {
+        const pubStr = String(publisher);
+        if (subscribed) {
+            unsubscribed.delete(pubStr);
+        } else {
+            unsubscribed.add(pubStr);
+        }
+        const box = byId(`peer-box-${publisher}`);
+        if (!box) {
+            return;
+        }
+        box.dataset.subscribed = subscribed ? 'true' : 'false';
+        const toggle = box.querySelector('.switch-input');
+        if (toggle) {
+            toggle.checked = subscribed;
+        }
+        // Empty slots caption what the peer is waiting for: "Unsubscribed" while off, back to the
+        // usual "No video" / "No audio" once re-checked (until the forwarded track arrives).
+        const video = box.querySelector('.peer-video');
+        const audio = box.querySelector('.peer-audio');
+        if (!subscribed || !video.querySelector('video')) {
+            video.replaceChildren(makePlaceholder(subscribed ? 'No video' : 'Unsubscribed'));
+        }
+        if (!subscribed || !audio.querySelector('audio')) {
+            audio.replaceChildren(makePlaceholder(subscribed ? 'No audio' : 'Unsubscribed'));
+        }
+    }
+
+    // Find (or lazily create) the box that groups one peer's video (top) and audio (bottom),
+    // captioned by a card header naming the peer — styled like the ice-tcp example's cards.
+    // Peers are keyed by the publishing client id; the video slot always reserves its space so
+    // the layout is stable with or without video.
+    function getOrCreatePeerBox(peerKey, publisher) {
+        const boxId = `peer-box-${peerKey}`;
+        let box = byId(boxId);
+        if (box) {
+            return box;
+        }
+        box = document.createElement('div');
+        box.className = 'peer card';
+        box.id = boxId;
+        if (publisher != null) {
+            box.dataset.publisher = String(publisher);
+        }
+
+        // Card header: a status dot plus the peer's client id, mirroring the ICE States card.
+        const header = document.createElement('div');
+        header.className = 'card-header';
+        const title = document.createElement('div');
+        title.className = 'card-title';
+        const icon = document.createElement('span');
+        icon.className = 'card-icon';
+        const caption = document.createElement('span');
+        caption.className = 'peer-caption';
+        caption.textContent = `${publisher ?? 'unknown'}`;
+        title.appendChild(icon);
+        title.appendChild(caption);
+        header.appendChild(title);
+        if (publisher != null) {
+            header.appendChild(makeSubscribeToggle(publisher));
+        }
+        box.dataset.subscribed = unsubscribed.has(String(publisher)) ? 'false' : 'true';
+
+        const video = document.createElement('div');
+        video.className = 'peer-video';
+        video.appendChild(makePlaceholder('No video'));
+
+        const audio = document.createElement('div');
+        audio.className = 'peer-audio';
+        audio.appendChild(makePlaceholder('No audio'));
+
+        box.appendChild(header);
+        box.appendChild(video);
+        box.appendChild(audio);
+        byId('media').appendChild(box);
+        return box;
+    }
+
+    function attachTrack(track, publisher) {
+        const domId = `media-${track.id}`;
+        if (byId(domId)) {
+            // we already have this track attached
+            return;
+        }
+        // Group by the publishing client id so a peer's video and audio (which come from separate
+        // getUserMedia streams, hence different stream ids) land in the same box. Fall back to the
+        // stream/track id only if the client id couldn't be recovered.
+        const peerKey = publisher ?? track.id;
+        const box = getOrCreatePeerBox(peerKey, publisher);
+        const kind = track.kind === 'audio' ? 'audio' : 'video';
+
+        const el = document.createElement(kind);
+        el.id = domId;
+        el.controls = true;
+        el.autoplay = true;
+        el.playsInline = true;
+        el.hidden = track.muted;
+        const media = new MediaStream();
+        media.addTrack(track);
+        el.srcObject = media;
+
+        // Drop the track into its slot (video replaces the reserved-space placeholder).
+        box.querySelector(kind === 'audio' ? '.peer-audio' : '.peer-video').replaceChildren(el);
+
+        const playMedia = () => {
+            el.play().catch((error) => {
+                console.log('media.play() failed', error);
+            });
+        };
+        el.addEventListener('loadedmetadata', playMedia);
+        playMedia();
+        track.addEventListener('mute', () => {
+            console.log('track muted', track);
+            el.hidden = true;
+        });
+        track.addEventListener('unmute', () => {
+            console.log('track unmuted', track);
+            el.hidden = false;
+            playMedia();
+        });
+    }
+
+    function onTrack(e) {
+        console.log('ontrack', e.track, e.streams);
+        const publisher = publisherClientId(e);
+        if (publisher && e.track) {
+            e.track._publisher = publisher;
+        }
+        attachTrack(e.track, publisher);
+    }
+
+    // After a re-offer/re-answer is applied, remove the DOM for any received track that is no longer live
+    // (its transceiver is no longer receiving) and re-attach any newly re-subscribed tracks.
+    function pruneStaleMedia() {
+        const live = new Set();
+        const activePublishers = new Set();
+        rtc.getTransceivers().forEach((t) => {
+            const track = t.receiver && t.receiver.track;
+            const pub = transceiverPublisher(t);
+            if (pub) {
+                activePublishers.add(pub);
+            }
+            if (track && (t.currentDirection === 'recvonly' || t.currentDirection === 'sendrecv')) {
+                live.add(track.id);
+                if (pub && !unsubscribed.has(pub)) {
+                    attachTrack(track, pub);
+                }
+            }
+        });
+        byId('media').querySelectorAll('video, audio').forEach((el) => {
+            const trackId = el.id.replace(/^media-/, '');
+            if (!live.has(trackId)) {
+                el.remove();
+            }
+        });
+        // Manage peer cards: only remove cards of peers whose transceivers no longer exist (left the room).
+        byId('media').querySelectorAll('.peer').forEach((box) => {
+            const publisher = box.dataset.publisher;
+            if (publisher && !activePublishers.has(publisher)) {
+                box.remove();
+                unsubscribed.delete(publisher);
+                return;
+            }
+
+            const off = (publisher && unsubscribed.has(publisher)) || box.dataset.subscribed === 'false';
+            const empty = off ? 'Unsubscribed' : null;
+
+            if (!box.querySelector('.peer-video video')) {
+                box.querySelector('.peer-video').replaceChildren(makePlaceholder('No video'));
+            }
+            if (!box.querySelector('.peer-audio audio')) {
+                box.querySelector('.peer-audio').replaceChildren(makePlaceholder('No audio'));
+            }
+        });
+    }
+
+    async function startRtc() {
+        // Start from a fresh peer connection with handlers attached.
+        newRtc();
+        setConnState('checking', 'Connecting');
+        byId('chan_status').innerText = 'Joining room ' + byId("room").value + ' as client ' + clientId;
+        byId("room").disabled = true;
+        byId('join').disabled = true;
+        byId('leave').disabled = false;
+
+        // Capture cam + mic up front (permission prompt fires on Join) so the very first offer
+        // already publishes both the camera video and the microphone audio. If a device is
+        // missing or denied, addCam/addMic no-op and re-enable their button for a later retry.
+        await addCam();
+        await addMic();
+
+        // The data channel is a transport bootstrap; its onopen tells us the connection is ready.
+        dataChannel = rtc.createDataChannel("bootstrap");
+        dataChannel.onopen = () => {
+            byId('chan_status').innerText = 'Joined room ' + byId("room").value + ' as client ' + clientId;
+            // Enable the Cam/Mic switches for the duration of the call.
+            byId('cam').disabled = false;
+            byId('mic').disabled = false;
+        };
+
+        // One WebSocket carries all signaling, both directions. On open we register, then
+        // send our initial offer; the SFU's answer and any re-offers arrive on onmessage.
+        ws = new WebSocket('wss://signal.abaz.shop/ws');
+        ws.onopen = async () => {
+            console.log('WS open; registering ' + byId("room").value + '/' + clientId);
+            sendSignal({cmd: 'register', roomid: roomIdToUuid(byId("room").value), clientid: clientId});
+
+            await setupCodecs();  // constrain the media m-lines to VP8 / OPUS before offering
+            const offer = await rtc.createOffer();
+            rtc.setLocalDescription(offer);
+            console.log('send offer', offer.sdp.split('\r\n'));
+            sendSignal({cmd: 'offer', sdp: offer});
+        };
+        ws.onmessage = onWsMessage;
+        ws.onclose = (e) => console.log('WS closed:', e.code, e.reason);
+        ws.onerror = (e) => console.log('WS error:', e);
+    }
+
+    async function leaveRtc() {
+        // Tell the SFU we're leaving (a no-op if the socket is already gone), then reset.
+        sendSignal({cmd: 'leave'});
+        resetSession('waiting', 'Waiting', 'Click Join Button...');
+    }
+
+    // Tear the whole session down and return every control to its initial "not joined" state so a
+    // later Join starts clean. Shared by Leave and by an unexpected SFU disconnect; idempotent, so
+    // calling it again after teardown is harmless. `connKind`/`connLabel` set the Room status
+    // (yellow "Waiting" for Leave, red for a disconnect) and `chanText` the detail line.
+    function resetSession(connKind, connLabel, chanText) {
+        if (ws) {
+            ws.close();
+            ws = null;
+        }
+        // Null out rtc before closing so the resulting 'closed' event is ignored (onIceStateChange
+        // early-returns when rtc is null), avoiding both a status flip-back and a null deref.
+        const oldRtc = rtc;
+        rtc = null;
+        oldRtc?.close();
+        dataChannel = null;
+
+        // Stop any local capture and drop the references.
+        streamCam?.getTracks().forEach((t) => t.stop());
+        streamMic?.getTracks().forEach((t) => t.stop());
+        streamCam = undefined;
+        streamMic = undefined;
+
+        // Remove every peer's video/audio box.
+        byId('media').innerHTML = '';
+
+        // Reset all controls and status text to the initial state.
+        setConnState(connKind, connLabel);
+        byId('chan_status').innerText = chanText;
+        byId('chan_status').style.color = '';
+        byId("room").disabled = false;
+        byId('join').disabled = false;
+        byId('leave').disabled = true;
+        byId('cam').disabled = true;
+        byId('cam').checked = false;
+        byId('mic').disabled = true;
+        byId('mic').checked = false;
+    }
+</script>
 </body>
+<!-- Global site tag (gtag.js) - Google Analytics -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-BHTZSJEX72"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-BHTZSJEX72');
+</script>
 </html>
